@@ -4,8 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#4f46e5" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Stock Matériels D3" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <title>Stock Matériels D3</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
@@ -43,6 +47,19 @@
   </header>
 
   <main class="max-w-5xl mx-auto px-4 pt-4 space-y-4">
+
+    <section id="install-banner" class="hidden">
+      <div class="bg-white border border-indigo-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm">
+        <div class="flex-1 min-w-0">
+          <p class="font-semibold text-sm">Installer sur le téléphone</p>
+          <p id="install-help" class="text-xs text-slate-500 mt-0.5 leading-relaxed">Ajoute Stock Matériels D3 à l'écran d'accueil. Elle s'ouvre ensuite comme une application.</p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button type="button" id="install-button" onclick="installApp()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">Installer</button>
+          <button type="button" onclick="dismissInstall()" class="text-slate-500 hover:text-slate-700 text-sm px-2 py-2">Plus tard</button>
+        </div>
+      </div>
+    </section>
 
     <section class="grid grid-cols-2 md:grid-cols-4 gap-2.5">
       <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200">
@@ -117,6 +134,14 @@
     </section>
 
     <section id="view-tools" class="hidden space-y-3">
+      <div id="install-card" class="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
+        <h3 class="font-bold text-base"><i class="fa-solid fa-mobile-screen-button text-indigo-600 mr-2"></i>Installer sur le téléphone</h3>
+        <p id="install-card-help" class="text-xs text-slate-600 leading-relaxed">Ajoute Stock Matériels D3 à l'écran d'accueil. Elle s'ouvre ensuite comme une application, sans la barre du navigateur.</p>
+        <button type="button" id="install-card-button" onclick="installApp()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-lg inline-flex items-center gap-2">
+          <i class="fa-solid fa-download"></i> Installer
+        </button>
+      </div>
+
       <div class="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
         <h3 class="font-bold text-base"><i class="fa-solid fa-cloud-arrow-up text-indigo-600 mr-2"></i>Synchronisation Multi-Appareils (Firebase)</h3>
         <p id="firebase-status-text" class="text-xs text-slate-600 leading-relaxed">Mode local : les données restent dans ce navigateur. Pour synchroniser le stock en direct entre plusieurs téléphones et PC, collez vos clés Firebase dans la variable <code>firebaseConfig</code> de ce fichier.</p>
@@ -280,6 +305,8 @@
     let scanMode = "search";
     let toastTimer = null;
     let pendingDeleteId = null;
+    let deferredInstall = null;
+    const INSTALL_DISMISS_KEY = "smd3-install-dismissed";
 
     function esc(value) {
       return String(value ?? "")
@@ -956,9 +983,85 @@
       closeModal("move-modal");
     });
 
+    function isStandalone() {
+      return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    }
+
+    function isIos() {
+      return /iphone|ipad|ipod/i.test(navigator.userAgent);
+    }
+
+    function installHelpText() {
+      if (isIos()) return "Dans Safari, touche Partager, puis « Sur l'écran d'accueil ».";
+      return "Ajoute Stock Matériels D3 à l'écran d'accueil. Elle s'ouvre ensuite comme une application, sans la barre du navigateur.";
+    }
+
+    function updateInstallUi() {
+      const banner = document.getElementById("install-banner");
+      const card = document.getElementById("install-card");
+      const bannerButton = document.getElementById("install-button");
+      const cardButton = document.getElementById("install-card-button");
+      if (isStandalone()) {
+        banner.classList.add("hidden");
+        card.classList.add("hidden");
+        return;
+      }
+      const help = installHelpText();
+      document.getElementById("install-help").textContent = help;
+      document.getElementById("install-card-help").textContent = help;
+      const showButton = !isIos();
+      bannerButton.classList.toggle("hidden", !showButton);
+      cardButton.classList.toggle("hidden", !showButton);
+      card.classList.remove("hidden");
+      const dismissed = localStorage.getItem(INSTALL_DISMISS_KEY) === "1";
+      banner.classList.toggle("hidden", dismissed);
+    }
+
+    function dismissInstall() {
+      localStorage.setItem(INSTALL_DISMISS_KEY, "1");
+      document.getElementById("install-banner").classList.add("hidden");
+    }
+
+    async function installApp() {
+      if (isIos()) {
+        toast("Dans Safari : Partager, puis Sur l'écran d'accueil.");
+        return;
+      }
+      if (!deferredInstall) {
+        toast("Ouvre le menu du navigateur, puis Installer l'application.");
+        return;
+      }
+      deferredInstall.prompt();
+      const choice = await deferredInstall.userChoice;
+      deferredInstall = null;
+      if (choice.outcome === "accepted") {
+        document.getElementById("install-banner").classList.add("hidden");
+        document.getElementById("install-card").classList.add("hidden");
+      }
+    }
+
+    function setupInstall() {
+      updateInstallUi();
+      window.addEventListener("beforeinstallprompt", (event) => {
+        event.preventDefault();
+        deferredInstall = event;
+        updateInstallUi();
+      });
+      window.addEventListener("appinstalled", () => {
+        deferredInstall = null;
+        document.getElementById("install-banner").classList.add("hidden");
+        document.getElementById("install-card").classList.add("hidden");
+        toast("Application installée");
+      });
+      if ("serviceWorker" in navigator && location.protocol !== "file:") {
+        navigator.serviceWorker.register("./sw.js").catch((err) => console.error(err));
+      }
+    }
+
     loadLocal();
     renderAll();
     initFirebase();
+    setupInstall();
   </script>
 </body>
 </html>
