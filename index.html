@@ -44,6 +44,11 @@
         </button>
       </div>
     </div>
+    <div class="max-w-5xl mx-auto px-4 pb-2">
+      <button type="button" id="identity-bar" onclick="switchTab('tools')" class="text-left text-[11px] text-indigo-100">
+        <i class="fa-solid fa-user-pen mr-1.5"></i><span id="identity-bar-text">Magasin non renseigné · Opérateur non renseigné</span>
+      </button>
+    </div>
   </header>
 
   <main class="max-w-5xl mx-auto px-4 pt-4 space-y-4">
@@ -124,6 +129,8 @@
               <th class="px-4 py-3">Type</th>
               <th class="px-4 py-3">Matériel</th>
               <th class="px-4 py-3">Qté</th>
+              <th class="px-4 py-3">Magasin</th>
+              <th class="px-4 py-3">Opérateur</th>
               <th class="px-4 py-3">Tiers / Motif</th>
               <th class="px-4 py-3 text-right">Bon PDF</th>
             </tr>
@@ -134,6 +141,21 @@
     </section>
 
     <section id="view-tools" class="hidden space-y-3">
+      <div class="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
+        <h3 class="font-bold text-base"><i class="fa-solid fa-user-pen text-indigo-600 mr-2"></i>Poste de saisie</h3>
+        <p class="text-xs text-slate-500 leading-relaxed">Le code magasin et le nom de l'opérateur sont recopiés sur chaque mouvement. Ils restent visibles dans l'historique.</p>
+        <div class="grid sm:grid-cols-2 gap-3 text-sm">
+          <div>
+            <label class="block font-medium text-slate-700 mb-1" for="identity-store">Code magasin / dépôt</label>
+            <input type="text" id="identity-store" oninput="saveIdentityFromForm()" placeholder="Ex: D3" class="w-full border border-slate-300 rounded-lg px-3 py-2 select-text" />
+          </div>
+          <div>
+            <label class="block font-medium text-slate-700 mb-1" for="identity-operator">Opérateur</label>
+            <input type="text" id="identity-operator" oninput="saveIdentityFromForm()" placeholder="Ex: Marie Dupont" class="w-full border border-slate-300 rounded-lg px-3 py-2 select-text" />
+          </div>
+        </div>
+      </div>
+
       <div id="install-card" class="bg-white p-5 rounded-xl border border-slate-200 space-y-3">
         <h3 class="font-bold text-base"><i class="fa-solid fa-mobile-screen-button text-indigo-600 mr-2"></i>Installer sur le téléphone</h3>
         <p id="install-card-help" class="text-xs text-slate-600 leading-relaxed">Ajoute Stock Matériels D3 à l'écran d'accueil. Elle s'ouvre ensuite comme une application, sans la barre du navigateur.</p>
@@ -250,6 +272,16 @@
           <label class="block font-medium text-slate-700 mb-1" for="move-qty">Quantité *</label>
           <input type="number" id="move-qty" required min="1" value="1" inputmode="numeric" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-lg font-bold select-text" />
         </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-medium text-slate-700 mb-1" for="move-store">Code magasin / dépôt</label>
+            <input type="text" id="move-store" placeholder="Ex: D3" class="w-full border border-slate-300 rounded-lg px-3 py-2 select-text" />
+          </div>
+          <div>
+            <label class="block font-medium text-slate-700 mb-1" for="move-operator">Opérateur</label>
+            <input type="text" id="move-operator" placeholder="Ex: Marie Dupont" class="w-full border border-slate-300 rounded-lg px-3 py-2 select-text" />
+          </div>
+        </div>
         <div>
           <label class="block font-medium text-slate-700 mb-1" for="move-party">Tiers (Fournisseur, Client ou Technicien)</label>
           <input type="text" id="move-party" placeholder="Ex: Chantier Nord / Marc D." class="w-full border border-slate-300 rounded-lg px-3 py-2 select-text" />
@@ -295,9 +327,11 @@
     };
 
     const STORAGE_KEY = "stodo-pro-v1";
+    const IDENTITY_KEY = "smd3-identity";
 
     let products = [];
     let movements = [];
+    let identity = { storeCode: "", operator: "" };
     let db = null;
     let applyingRemote = false;
     let scanner = null;
@@ -350,6 +384,46 @@
         products = [];
         movements = [];
       }
+    }
+
+    function loadIdentity() {
+      try {
+        const raw = localStorage.getItem(IDENTITY_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        identity = {
+          storeCode: String(data.storeCode || "").trim(),
+          operator: String(data.operator || "").trim()
+        };
+      } catch (err) {
+        identity = { storeCode: "", operator: "" };
+      }
+    }
+
+    function saveIdentity(next) {
+      identity = {
+        storeCode: String(next.storeCode || "").trim(),
+        operator: String(next.operator || "").trim()
+      };
+      localStorage.setItem(IDENTITY_KEY, JSON.stringify(identity));
+      renderIdentity();
+    }
+
+    function saveIdentityFromForm() {
+      saveIdentity({
+        storeCode: document.getElementById("identity-store").value,
+        operator: document.getElementById("identity-operator").value
+      });
+    }
+
+    function renderIdentity() {
+      const storeInput = document.getElementById("identity-store");
+      const operatorInput = document.getElementById("identity-operator");
+      if (document.activeElement !== storeInput) storeInput.value = identity.storeCode;
+      if (document.activeElement !== operatorInput) operatorInput.value = identity.operator;
+      const storeLabel = identity.storeCode || "Magasin non renseigné";
+      const operatorLabel = identity.operator || "Opérateur non renseigné";
+      document.getElementById("identity-bar-text").textContent = storeLabel + " · " + operatorLabel;
     }
 
     function persist() {
@@ -571,7 +645,7 @@
     function renderHistory() {
       const body = document.getElementById("history-list");
       if (!movements.length) {
-        body.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-sm text-slate-500">Aucun mouvement pour le moment.</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-sm text-slate-500">Aucun mouvement pour le moment.</td></tr>';
         return;
       }
       body.innerHTML = movements.map((movement) => {
@@ -586,6 +660,8 @@
               <div class="text-xs text-slate-400">${esc(movement.sku || "")}</div>
             </td>
             <td class="px-4 py-3 font-bold ${qtyClass}">${esc(qtyLabel(movement))}</td>
+            <td class="px-4 py-3 whitespace-nowrap">${esc(movement.storeCode || "—")}</td>
+            <td class="px-4 py-3 whitespace-nowrap">${esc(movement.operator || "—")}</td>
             <td class="px-4 py-3">
               <div>${esc(movement.party || "—")}</div>
               <div class="text-xs text-slate-400">${esc(movement.reason || "")}</div>
@@ -628,6 +704,8 @@
         qty: fields.qty,
         qtyAfter: fields.qtyAfter,
         unitPrice: Number(fields.product.price) || 0,
+        storeCode: fields.storeCode !== undefined ? fields.storeCode : identity.storeCode,
+        operator: fields.operator !== undefined ? fields.operator : identity.operator,
         party: fields.party || "",
         reason: fields.reason || ""
       };
@@ -737,6 +815,8 @@
       document.getElementById("move-qty").max = type === "out" ? String(product.qty) : "";
       document.getElementById("move-party").value = "";
       document.getElementById("move-reason").value = "";
+      document.getElementById("move-store").value = identity.storeCode;
+      document.getElementById("move-operator").value = identity.operator;
       const submit = document.getElementById("move-submit");
       submit.textContent = type === "in" ? "Enregistrer l'entrée" : "Enregistrer la sortie";
       submit.className = "px-4 py-2 rounded-lg text-white font-semibold " + (type === "in" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700");
@@ -759,12 +839,17 @@
         toast("Stock insuffisant (" + product.qty + " en stock).");
         return;
       }
+      const storeCode = document.getElementById("move-store").value.trim();
+      const operator = document.getElementById("move-operator").value.trim();
+      saveIdentity({ storeCode, operator });
       product.qty = type === "in" ? product.qty + qty : product.qty - qty;
       movements.unshift(makeMovement({
         type,
         product,
         qty,
         qtyAfter: product.qty,
+        storeCode,
+        operator,
         party: document.getElementById("move-party").value.trim(),
         reason: document.getElementById("move-reason").value.trim()
       }));
@@ -795,6 +880,8 @@
       const lineValue = Math.abs(Number(movement.qty) || 0) * (Number(movement.unitPrice) || 0);
       const rows = [
         ["Date", formatDate(movement.date)],
+        ["Magasin / dépôt", movement.storeCode || "—"],
+        ["Opérateur", movement.operator || "—"],
         ["Référence du bon", ref],
         ["Article", movement.productName || "—"],
         ["Code-barres / SKU", movement.sku || "—"],
@@ -834,6 +921,14 @@
       return text;
     }
 
+    function fileDateStamp(date) {
+      const value = date || new Date();
+      const year = value.getFullYear();
+      const month = String(value.getMonth() + 1).padStart(2, "0");
+      const day = String(value.getDate()).padStart(2, "0");
+      return String(year) + month + day;
+    }
+
     function downloadText(filename, contents, type) {
       const blob = new Blob([contents], { type });
       const url = URL.createObjectURL(blob);
@@ -864,13 +959,13 @@
           ((Number(product.price) || 0) * (Number(product.qty) || 0)).toFixed(2).replace(".", ",")
         ])
       ];
-      downloadText("stock-materiels-d3-inventaire.csv", toCsv(rows), "text/csv;charset=utf-8");
+      downloadText("stock-materiels-d3-inventaire-" + fileDateStamp() + ".csv", toCsv(rows), "text/csv;charset=utf-8");
       toast("Inventaire exporté");
     }
 
     function exportHistoryCSV() {
       const rows = [
-        ["Date", "Type", "Article", "Code-barres", "Quantité", "Stock après", "Tiers", "Motif", "Réf. bon"],
+        ["Date", "Type", "Article", "Code-barres", "Quantité", "Stock après", "Magasin", "Opérateur", "Tiers", "Motif", "Réf. bon"],
         ...movements.map((movement) => [
           formatDate(movement.date),
           typeMeta(movement.type).label,
@@ -878,12 +973,14 @@
           movement.sku,
           qtyLabel(movement),
           movement.qtyAfter,
+          movement.storeCode,
+          movement.operator,
           movement.party,
           movement.reason,
           bonRef(movement)
         ])
       ];
-      downloadText("stock-materiels-d3-historique.csv", toCsv(rows), "text/csv;charset=utf-8");
+      downloadText("stock-materiels-d3-historique-" + fileDateStamp() + ".csv", toCsv(rows), "text/csv;charset=utf-8");
       toast("Historique exporté");
     }
 
@@ -1059,6 +1156,8 @@
     }
 
     loadLocal();
+    loadIdentity();
+    renderIdentity();
     renderAll();
     initFirebase();
     setupInstall();
